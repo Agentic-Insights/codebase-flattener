@@ -1,2 +1,24 @@
+# Flattener Output
+*_flat/**
+
+# App-Specific Files
+__pycache__
+*.pyc
+*.pyo
+*.swp
+
+# Python Environments
 .conda
+venv
+.venv
+
+# Build/Dist Files
+build/
+dist/
+
+# Version Control
+.git
+
+# System Files
+.DS_Store
 

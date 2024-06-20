@@ -3,7 +3,6 @@ import shutil
 from pathlib import Path
 import subprocess
 import nltk
-nltk.download('punkt')
 from nltk.tokenize import word_tokenize
 import tiktoken
 
@@ -79,6 +78,8 @@ def count_tokens(src_dir, include_list=None, tokenizer=None):
                If tokenizer is "nltk", estimated_tokens is equal to nltk_tokens.
                If tokenizer is "tiktoken", estimated_tokens is equal to tiktoken_tokens.
     """
+    nltk.download('punkt')
+
     total_tokens_nltk = 0
     total_tokens_tiktoken = 0
     for root, _, files in os.walk(src_dir):
@@ -90,13 +91,17 @@ def count_tokens(src_dir, include_list=None, tokenizer=None):
             if include_list and str(relative_path.parent) not in include_list and str(relative_path) not in include_list:
                 continue
 
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                tokens_nltk = word_tokenize(content)
-                total_tokens_nltk += len(tokens_nltk)
-                encoding = tiktoken.get_encoding("gpt2")
-                tokens_tiktoken = encoding.encode(content)
-                total_tokens_tiktoken += len(tokens_tiktoken)
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    tokens_nltk = word_tokenize(content)
+                    total_tokens_nltk += len(tokens_nltk)
+                    encoding = tiktoken.get_encoding("gpt2")
+                    tokens_tiktoken = encoding.encode(content)
+                    total_tokens_tiktoken += len(tokens_tiktoken)
+            except UnicodeDecodeError:
+                print(f"Skipping file '{file_path}' due to UnicodeDecodeError.")
+                continue
 
     if tokenizer is None:
         average_tokens = (total_tokens_nltk + total_tokens_tiktoken) // 2
