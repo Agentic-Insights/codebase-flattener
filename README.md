@@ -1,6 +1,6 @@
-# Directory Flattener
+# Codebase Flattener
 
-The Directory Flattener is a Python script that flattens a directory structure by copying files from a source directory and its subdirectories into a target directory, grouping them into folders of a specified size. It provides control over which directories and files to include in the flattening process and automatically ignores files and directories specified in the `.gitignore` file.
+The Codebase Flattener is a Python script that flattens a directory structure by copying files from a source directory and its subdirectories into a target directory, grouping them into folders of a specified size. It provides control over which directories and files to include in the flattening process and automatically ignores files and directories specified in the `.gitignore` file.
 
 ## Features
 - Recursively traverses a source directory and its subdirectories.
@@ -19,7 +19,7 @@ The Directory Flattener is a Python script that flattens a directory structure b
 ## Installation
 1. Clone the repository:
    ```
-   git clone https://github.com/Agentic-Insights/context-flattener
+   git clone https://github.com/Agentic-Insights/codebase-flattener
    ```
 2. Install the required dependencies:
    ```
@@ -55,11 +55,44 @@ The script allows for configuration through the `flatten-config.json` file place
 {
   "include": [
     "path/to/include1",
-    "path/to/include2"
+    "path/to/include2",
+    "path/to/directory/*",
+    "**/*.txt"
   ]
 }
 ```
-- `include`: An array of directory or file paths to include in the flattening process. If not specified or empty, the script will not proceed with flattening unless the `--force` flag is provided.
+- `include`: An array of file paths, directory paths, or patterns to include in the flattening process. If not specified or empty, the script will not proceed with flattening unless the `--force` flag is provided.
+
+The `include` array supports the following types of entries:
+- File paths: Specify the relative path to a specific file to include it in the flattening process. For example, `"path/to/file.txt"`.
+- Directory paths: Specify the relative path to a directory to include all its files and subdirectories in the flattening process. For example, `"path/to/directory"`.
+- Glob patterns: Use wildcard characters to match multiple files or directories. For example, `"path/to/directory/*"` will include all files in the specified directory, and `"**/*.txt"` will include all files with a `.txt` extension in any directory.
+
+The script interprets the entries in the `include` array similarly to the patterns used in `.gitignore` files. It supports the following wildcard characters:
+- `*`: Matches any number of characters except path separators (/ or \).
+- `**`: Matches any number of characters, including path separators, to match files in nested directories.
+- `?`: Matches any single character.
+- `[abc]`: Matches any single character within the specified set (in this case, a, b, or c).
+- `[!abc]`: Matches any single character not within the specified set.
+
+Note that the script automatically ignores files and directories specified in the `.gitignore` file, so there is no need to duplicate those entries in the `flatten-config.json` file.
+
+Examples of valid `include` entries:
+```json
+{
+  "include": [
+    "src/main.py",
+    "src/utils",
+    "tests/*.py",
+    "docs/**/*.md"
+  ]
+}
+```
+- `"src/main.py"`: Includes the specific file `main.py` in the `src` directory.
+- `"src/utils"`: Includes all files and subdirectories in the `src/utils` directory.
+- `"tests/*.py"`: Includes all files with a `.py` extension in the `tests` directory.
+- `"docs/**/*.md"`: Includes all files with a `.md` extension in the `docs` directory and its subdirectories.
+
 
 ## Additional Options
 - `--tokenizer`: Specify the tokenizer to use for estimating the token count. Available options: `nltk`, `tiktoken`. If not provided, the script will use an average of both tokenizers.

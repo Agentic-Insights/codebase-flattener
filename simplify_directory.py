@@ -1,24 +1,58 @@
 import os
 import shutil
 from pathlib import Path
-import subprocess
+import fnmatch
+import glob
 import nltk
 from nltk.tokenize import word_tokenize
 import tiktoken
+import subprocess
 
 # Constants based on Gemini UI restrictions
 DEFAULT_FILES_PER_FOLDER = 100
 FLATTENED_FILE_EXTENSION = ".txt"
 
+def read_gitignore(src_dir):
+    """
+    Reads the .gitignore file in the source directory and returns a list of patterns to ignore.
+
+    Args:
+        src_dir (str or Path): The path to the source directory.
+
+    Returns:
+        list: A list of patterns to ignore based on the .gitignore file.
+    """
+    gitignore_path = Path(src_dir, ".gitignore")
+    if gitignore_path.exists():
+        with open(gitignore_path, "r") as file:
+            return [line.strip() for line in file if line.strip() and not line.startswith("#")]
+    return []
+
+def should_ignore(file_path, ignore_patterns):
+    """
+    Determines whether a file should be ignored based on the ignore patterns.
+
+    Args:
+        file_path (str or Path): The path to the file.
+        ignore_patterns (list): A list of patterns to ignore.
+
+    Returns:
+        bool: True if the file should be ignored, False otherwise.
+    """
+    for pattern in ignore_patterns:
+        if fnmatch.fnmatch(str(file_path), pattern):
+            return True
+    return False
+
 def flatten_directory(src_dir, dst_dir, include_list=None, files_per_folder=DEFAULT_FILES_PER_FOLDER):
     """
-    Simplifies a directory structure, grouping files into folders of a specified size.
+    Flattens a directory structure, copying files to the target directory.
 
     Args:
         src_dir (str or Path): The path to the source directory.
         dst_dir (str or Path): The path to the target directory.
-        include_list (list, optional): A list of directories or files to include in the flattening process.
-        files_per_folder (int, optional): The number of files per folder. Defaults to DEFAULT_FILES_PER_FOLDER.
+        include_list (list, optional): A list of glob patterns to include in the flattening process.
+        files_per_folder (int, optional): The maximum number of files per folder. Defaults to DEFAULT_FILES_PER_FOLDER.
     """
     src_dir = Path(src_dir)
     dst_dir = Path(dst_dir)
@@ -26,43 +60,44 @@ def flatten_directory(src_dir, dst_dir, include_list=None, files_per_folder=DEFA
     # Create the target directory if it doesn't exist
     dst_dir.mkdir(parents=True, exist_ok=True)
 
+    ignore_patterns = read_gitignore(src_dir)
+
     files_copied = 0
     current_folder = 1
 
-    for root, _, files in os.walk(src_dir):
-        for file in files:
-            src_path = Path(root, file)
-            relative_path = src_path.relative_to(src_dir)
+    included_files = []
+    if include_list:
+        for pattern in include_list:
+            included_files.extend(glob.glob(str(src_dir / pattern), recursive=True))
+    else:
+        included_files = glob.glob(str(src_dir / "**"), recursive=True)
 
-            # Skip files and directories not in the include list
-            if include_list and str(relative_path.parent) not in include_list and str(relative_path) not in include_list:
+    for file_path in included_files:
+        file_path = Path(file_path)
+        if file_path.is_file():
+            relative_path = file_path.relative_to(src_dir)
+
+            # Skip files specified in .gitignore
+            if should_ignore(relative_path, ignore_patterns):
                 continue
 
-            # Create a new folder if needed
+            # Create a new folder if the current folder has reached the maximum number of files
             if files_copied % files_per_folder == 0:
                 folder_name = f"folder{current_folder}"
                 folder_path = dst_dir / folder_name
                 folder_path.mkdir(parents=True, exist_ok=True)
                 current_folder += 1
 
-            # Preserve the original file extension
-            flattened_name = str(relative_path.parent) + "--" + relative_path.stem + FLATTENED_FILE_EXTENSION
-            flattened_name = flattened_name.replace(os.path.sep, '--')
-
+            flattened_name = str(relative_path).replace(os.path.sep, "--")
             dst_path = folder_path / flattened_name
 
-            if dst_path.exists():
-                print(f"Warning: File '{dst_path}' already exists, skipping...")
-                continue
-
-            shutil.copy2(src_path, dst_path)
+            shutil.copy2(file_path, dst_path)
             files_copied += 1
 
-    print(f"\n{files_copied} files copied to '{dst_dir}' in separate folders.")
-
+    print(f"Directory flattened successfully. Flattened files copied to: {dst_dir}")
     # Open the flattened folder
     open_folder(dst_dir)
-
+    
 def count_tokens(src_dir, include_list=None, tokenizer=None):
     """
     Counts the total number of tokens in all files within a directory and its subdirectories.
