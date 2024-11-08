@@ -3,14 +3,15 @@ import shutil
 from pathlib import Path
 import fnmatch
 import glob
-import nltk
-from nltk.tokenize import word_tokenize
-import tiktoken
 import subprocess
 
 # Constants based on Gemini UI restrictions
 DEFAULT_FILES_PER_FOLDER = 100
 FLATTENED_FILE_EXTENSION = ".txt"
+
+# Token estimation constants
+AVERAGE_CHARS_PER_TOKEN = 4  # A reasonable approximation for English text
+WHITESPACE_MULTIPLIER = 0.8  # Adjustment factor for whitespace
 
 def read_gitignore(src_dir):
     """
@@ -44,6 +45,22 @@ def should_ignore(file_path, ignore_patterns):
             return True
     return False
 
+def should_include(file_path, include_patterns):
+    """
+    Determines whether a file should be included based on the include patterns.
+
+    Args:
+        file_path (str or Path): The path to the file.
+        include_patterns (list): A list of glob patterns to include.
+
+    Returns:
+        bool: True if the file should be included, False otherwise.
+    """
+    if not include_patterns:
+        return True
+    file_path_str = str(file_path)
+    return any(fnmatch.fnmatch(file_path_str, pattern) for pattern in include_patterns)
+
 def flatten_directory(src_dir, dst_dir, include_list=None, files_per_folder=DEFAULT_FILES_PER_FOLDER):
     """
     Flattens a directory structure, copying files to the target directory.
@@ -64,29 +81,27 @@ def flatten_directory(src_dir, dst_dir, include_list=None, files_per_folder=DEFA
 
     files_copied = 0
     current_folder = 1
+    folder_path = dst_dir / f"folder{current_folder}"
+    folder_path.mkdir(parents=True, exist_ok=True)
 
-    included_files = []
-    if include_list:
-        for pattern in include_list:
-            included_files.extend(glob.glob(str(src_dir / pattern), recursive=True))
-    else:
-        included_files = glob.glob(str(src_dir / "**"), recursive=True)
-
-    for file_path in included_files:
-        file_path = Path(file_path)
-        if file_path.is_file():
+    for root, _, files in os.walk(src_dir):
+        for file in files:
+            file_path = Path(root, file)
             relative_path = file_path.relative_to(src_dir)
 
             # Skip files specified in .gitignore
             if should_ignore(relative_path, ignore_patterns):
                 continue
 
+            # Skip files not matching include patterns
+            if not should_include(relative_path, include_list):
+                continue
+
             # Create a new folder if the current folder has reached the maximum number of files
-            if files_copied % files_per_folder == 0:
-                folder_name = f"folder{current_folder}"
-                folder_path = dst_dir / folder_name
-                folder_path.mkdir(parents=True, exist_ok=True)
+            if files_copied % files_per_folder == 0 and files_copied > 0:
                 current_folder += 1
+                folder_path = dst_dir / f"folder{current_folder}"
+                folder_path.mkdir(parents=True, exist_ok=True)
 
             flattened_name = str(relative_path).replace(os.path.sep, "--")
             dst_path = folder_path / flattened_name
@@ -98,55 +113,61 @@ def flatten_directory(src_dir, dst_dir, include_list=None, files_per_folder=DEFA
     # Open the flattened folder
     open_folder(dst_dir)
     
-def count_tokens(src_dir, include_list=None, tokenizer=None):
+def estimate_tokens(content):
     """
-    Counts the total number of tokens in all files within a directory and its subdirectories.
+    Estimates the number of tokens in a text using a simple character-based heuristic.
+    
+    Args:
+        content (str): The text content to estimate tokens for.
+        
+    Returns:
+        int: Estimated number of tokens.
+    """
+    # Count characters excluding whitespace
+    char_count = len(''.join(content.split()))
+    
+    # Apply whitespace adjustment (whitespace often separates tokens)
+    whitespace_count = len(content) - char_count
+    adjusted_count = char_count + (whitespace_count * WHITESPACE_MULTIPLIER)
+    
+    # Convert to token estimate
+    estimated_tokens = int(adjusted_count / AVERAGE_CHARS_PER_TOKEN)
+    
+    return max(1, estimated_tokens)  # Ensure at least 1 token
+
+def count_tokens(src_dir, include_list=None):
+    """
+    Estimates the total number of tokens in all files within a directory and its subdirectories
+    using a lightweight character-based approach.
 
     Args:
         src_dir (str or Path): The path to the source directory.
-        include_list (list, optional): A list of directories or files to include in the token count.
-        tokenizer (str, optional): The tokenizer to use. Available options: "nltk", "tiktoken". If None, returns counts for both tokenizers.
+        include_list (list, optional): A list of glob patterns to include in the token count.
 
     Returns:
-        tuple: A tuple containing (estimated_tokens, nltk_tokens, tiktoken_tokens).
-               If tokenizer is None, estimated_tokens is the average of nltk_tokens and tiktoken_tokens.
-               If tokenizer is "nltk", estimated_tokens is equal to nltk_tokens.
-               If tokenizer is "tiktoken", estimated_tokens is equal to tiktoken_tokens.
+        int: Estimated token count for the directory.
     """
-    nltk.download('punkt')
-
-    total_tokens_nltk = 0
-    total_tokens_tiktoken = 0
+    total_tokens = 0
+    src_dir = Path(src_dir)
+    
     for root, _, files in os.walk(src_dir):
         for file in files:
             file_path = Path(root, file)
             relative_path = file_path.relative_to(src_dir)
 
-            # Skip files and directories not in the include list
-            if include_list and str(relative_path.parent) not in include_list and str(relative_path) not in include_list:
+            # Skip files not matching include patterns
+            if not should_include(relative_path, include_list):
                 continue
 
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
-                    tokens_nltk = word_tokenize(content)
-                    total_tokens_nltk += len(tokens_nltk)
-                    encoding = tiktoken.get_encoding("gpt2")
-                    tokens_tiktoken = encoding.encode(content)
-                    total_tokens_tiktoken += len(tokens_tiktoken)
+                    total_tokens += estimate_tokens(content)
             except UnicodeDecodeError:
                 print(f"Skipping file '{file_path}' due to UnicodeDecodeError.")
                 continue
 
-    if tokenizer is None:
-        average_tokens = (total_tokens_nltk + total_tokens_tiktoken) // 2
-        return average_tokens, total_tokens_nltk, total_tokens_tiktoken
-    elif tokenizer == "nltk":
-        return total_tokens_nltk, total_tokens_nltk, total_tokens_tiktoken
-    elif tokenizer == "tiktoken":
-        return total_tokens_tiktoken, total_tokens_nltk, total_tokens_tiktoken
-    else:
-        raise ValueError(f"Invalid tokenizer: {tokenizer}")
+    return total_tokens
 
 def open_folder(path):
     """

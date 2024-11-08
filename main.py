@@ -31,13 +31,11 @@ def main():
     parser = argparse.ArgumentParser(description="Flatten a directory structure.")
     parser.add_argument("source_dir", help="The source directory to flatten.")
     parser.add_argument("--target_dir", help="The target directory for the flattened files.")
-    parser.add_argument("--tokenizer", default=None, help="The tokenizer to use for estimating the token count. Available options: 'nltk', 'tiktoken'.")
     parser.add_argument("--force", action="store_true", help="Force flattening without a configuration file.")
     args = parser.parse_args()
 
     source_dir = Path(args.source_dir)
     target_dir = Path(args.target_dir) if args.target_dir else source_dir.parent / f"{source_dir.name}_flat"
-    tokenizer = args.tokenizer
     force_flattening = args.force
 
     config = load_config(source_dir)
@@ -48,14 +46,8 @@ def main():
         print("If you want to flatten the entire directory, run the script with the --force flag.")
         return
 
-    total_tokens = count_tokens(source_dir, include_list, tokenizer)
-    if tokenizer:
-        print(f"Total token count (using '{tokenizer}' tokenizer): {total_tokens:,}")
-    else:
-        estimated_tokens, nltk_tokens, tiktoken_tokens = total_tokens
-        print(f"Estimated token count (average): {estimated_tokens:,}")
-        print(f"NLTK token count: {nltk_tokens:,}")
-        print(f"TikToken token count: {tiktoken_tokens:,}")
+    total_tokens = count_tokens(source_dir, include_list)
+    print(f"Estimated token count: {total_tokens:,}")
 
     print(f"\nFlattening directory: {source_dir}")
     print(f"Target directory: {target_dir}\n")
